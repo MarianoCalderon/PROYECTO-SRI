@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+redis
+neo4j
+faiss-cpu
+pandas
+numpy
+pydantic

@@ -1,0 +1,12 @@
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+  neo4j:
+    image: neo4j:latest
+    environment:
+      NEO4J_AUTH: neo4j/password123
+    ports:
+      - "7474:7474"
+      - "7687:7687"

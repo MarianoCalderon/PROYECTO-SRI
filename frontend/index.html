@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Descubrir | Recomendador</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="onboarding-modal" class="modal-overlay">
+    <div class="modal-content" style="max-height: 85vh; overflow-y: auto;">
+        <h2>Bienvenido a Descubrir</h2>
+        <p style="color: var(--text-muted); margin-bottom: 20px;">Configura tu perfil para afinar el motor algorítmico.</p>
+        
+        <label style="display: block; font-weight: 600; margin-bottom: 8px;">ID de Usuario</label>
+        <input type="text" id="nuevo-usuario-id" placeholder="Ej. usuario" autocomplete="off">
+
+        <label style="display: block; font-weight: 600; margin-top: 20px;">Selecciona tus géneros</label>
+        <div id="dynamic-genres" class="genre-grid">Cargando géneros...</div>
+
+        <label style="display: block; font-weight: 600; margin-top: 20px;">Tus artistas favoritos</label>
+        <div id="dynamic-artists" class="genre-grid" style="max-height: 150px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; border-radius: 10px;">
+            Cargando artistas...
+        </div>
+
+        <button onclick="enviarCuestionario()" style="margin-top: 30px;">Comenzar a escuchar</button>
+    </div>
+</div>
+
+<div class="container">
+    <h1 id="user-greeting">Descubrir</h1>
+    <p class="subtitle">Selecciones algorítmicas basadas en tu actividad reciente.</p>
+    <div id="loading">Analizando similitudes matemáticas...</div>
+    <div id="recommendation-list"></div>
+</div>
+
+<script>
+    const uiWorker = new Worker('worker.js');
+    let userId = null;
+
+    uiWorker.onmessage = function(e) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('recommendation-list').innerHTML = e.data;
+    };
+
+    async function cargarOpcionesOnboarding() {
+        try {
+            const response = await fetch('http://127.0.0.1:8000/onboarding-options/');
+            const data = await response.json();
+            
+            const genreHtml = data.genres.map(g => `<label><input type="checkbox" class="genre-cb" value="${g}"> ${g}</label>`).join('');
+            document.getElementById('dynamic-genres').innerHTML = genreHtml || '<p>No hay géneros</p>';
+
+            const artistHtml = data.artists.map(a => `<label><input type="checkbox" class="artist-cb" value="${a}"> ${a}</label>`).join('');
+            document.getElementById('dynamic-artists').innerHTML = artistHtml || '<p>No hay artistas</p>';
+            
+        } catch (e) {
+            console.error("Error cargando opciones", e);
+        }
+    }
+
+    async function enviarCuestionario() {
+        const inputId = document.getElementById('nuevo-usuario-id').value.trim();
+        if (!inputId) { alert("Por favor ingresa un ID válido."); return; }
+        
+        userId = inputId;
+        
+        const genreCbs = document.querySelectorAll('.genre-cb:checked');
+        const generosSeleccionados = Array.from(genreCbs).map(cb => cb.value);
+        
+        const artistCbs = document.querySelectorAll('.artist-cb:checked');
+        const artistasSeleccionados = Array.from(artistCbs).map(cb => cb.value);
+
+        try {
+            await fetch('http://127.0.0.1:8000/register/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    user_id: userId, 
+                    generos_favoritos: generosSeleccionados, 
+                    artistas_favoritos: artistasSeleccionados, 
+                    idioma_preferido: "es" 
+                })
+            });
+
+            document.getElementById('onboarding-modal').style.display = 'none';
+            document.getElementById('user-greeting').innerText = `Para ${userId}`;
+            cargarRecomendaciones(true, generosSeleccionados, artistasSeleccionados);
+        } catch (e) {
+            alert("Error al inicializar sesión en el backend.");
+        }
+    }
+
+    async function cargarRecomendaciones(isNew, genres = [], artists = []) {
+        document.getElementById('loading').style.display = 'block';
+        try {
+            const response = await fetch('http://127.0.0.1:8000/recommendations/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    user_id: userId, 
+                    is_new: isNew, 
+                    initial_genres: genres,
+                    initial_artists: artists
+                })
+            });
+            const data = await response.json();
+            uiWorker.postMessage(data);
+        } catch (e) {
+            document.getElementById('loading').innerText = "Error en la red.";
+        }
+    }
+
+    async function registrarInteraccion(trackId) {
+        document.getElementById('loading').style.display = 'block';
+        try {
+            await fetch('http://127.0.0.1:8000/interact/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, track_id: trackId, rating: 5 })
+            });
+            cargarRecomendaciones(false);
+        } catch (e) {
+            console.error("Error al registrar interacción", e);
+        }
+    }
+
+    cargarOpcionesOnboarding();
+</script>
+</body>
+</html>
