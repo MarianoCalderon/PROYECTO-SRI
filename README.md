@@ -66,7 +66,7 @@ docker-compose up -d
 (Nota: Neo4j puede tardar unos 40 segundos en estar listo para aceptar conexiones).
 
 **4. Poblar el clúster con datos reales**
-*Ejecuta el pipeline de datos. Esto extraerá una muestra aleatoria de 15,000 canciones, indexará los vectores en FAISS, guardará el ranking en Redis y creará el grafo base en Neo4j.
+* Ejecuta el pipeline de datos. Esto extraerá una muestra aleatoria de 15,000 canciones, indexará los vectores en FAISS, guardará el ranking en Redis y creará el grafo base en Neo4j.
 
 ```bash
 python seed_real_data.py
