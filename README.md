@@ -6,7 +6,7 @@ Integrantes:
 - Chacón Ambrosio David Efraín 
 - Ramírez Couoh Cristhian Leonel
 
- <img src="/Media/Mariano.jpeg" height="200"> <img src="/Media/Andrea.jpeg" height="200"> <img src="/Media/Mauro.jpeg" height="200"> <img src="/Media/Carlos.jpeg" height="200">
+ <img src="/Imagenes/Mariano.jpeg" height="200"> <img src="/Imagenes/David.jpeg" height="200"> <img src="/Imagenes/Cristhian.jpeg" height="200"> <img src="/Media/Carlos.jpeg" height="200">
 # Descubrir: Motor de Recomendación Musical Híbrido
 
 Un sistema de recomendación musical Full-Stack construido con **FastAPI**, **Neo4j**, **Redis** y **FAISS**. Este proyecto resuelve los desafíos clásicos de los sistemas de recomendación utilizando persistencia políglota y procesamiento asíncrono para entregar una experiencia de usuario fluida y transparente.
