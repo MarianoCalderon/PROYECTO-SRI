@@ -42,7 +42,7 @@ Por dentro, el sistema conserva una arquitectura híbrida:
 
 ## Historial inicial en Neo4j
 
-El proyecto carga un historial base pequeño, parecido al prototipo original de Mariano:
+El proyecto carga un historial base pequeño:
 
 - `Usuario_Frecuente_1`
 - `Usuario_Frecuente_2`
@@ -153,7 +153,7 @@ http://localhost:5500
 
 ---
 
-## Flujo sugerido para la presentación
+## Flujo sugerido 
 
 1. Abrir `/status/` para mostrar que Redis, FAISS y Neo4j están activos.
 2. Abrir el frontend.
