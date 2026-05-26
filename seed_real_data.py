@@ -6,7 +6,12 @@ import faiss
 import numpy as np
 import pandas as pd
 
-from infrastructure.db_clients import FAISS_DIM, redis_client, neo4j_driver, save_faiss_assets
+from infrastructure.db_clients import (
+    FAISS_DIM,
+    neo4j_driver,
+    redis_client,
+    save_faiss_assets,
+)
 from infrastructure.key_utils import normalizar_clave
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -31,6 +36,9 @@ def _preparar_dataframe(n_muestra: int = 15000) -> pd.DataFrame:
     df = pd.read_csv(CSV_PATH)
     df = df.dropna(subset=columnas_necesarias)
     df = df.drop_duplicates(subset="track_id")
+
+    # Filtrar el género 'iranian' para evitar sesgos en el recomendador
+    df = df[df["track_genre"] != "iranian"]
 
     if len(df) > n_muestra:
         # Misma idea del prototipo original: muestra reproducible de 15,000 canciones.
@@ -73,7 +81,9 @@ def _cargar_redis_y_faiss(df: pd.DataFrame) -> None:
 
         pipe.zadd("ranking:popularidad", {track_id: popularidad})
         pipe.zadd(f"ranking:genero:{normalizar_clave(genero)}", {track_id: popularidad})
-        pipe.zadd(f"ranking:artista:{normalizar_clave(artista)}", {track_id: popularidad})
+        pipe.zadd(
+            f"ranking:artista:{normalizar_clave(artista)}", {track_id: popularidad}
+        )
         pipe.hset(
             f"track:{track_id}",
             mapping={
@@ -89,7 +99,9 @@ def _cargar_redis_y_faiss(df: pd.DataFrame) -> None:
 
     matriz_vectores = np.array(vectores, dtype="float32")
     if matriz_vectores.shape[1] != FAISS_DIM:
-        raise ValueError(f"FAISS esperaba {FAISS_DIM} dimensiones y recibió {matriz_vectores.shape[1]}")
+        raise ValueError(
+            f"FAISS esperaba {FAISS_DIM} dimensiones y recibió {matriz_vectores.shape[1]}"
+        )
 
     index = faiss.IndexFlatL2(FAISS_DIM)
     index.add(matriz_vectores)
@@ -119,7 +131,9 @@ def _crear_historial_base_estilo_original(df: pd.DataFrame) -> list[dict]:
     """
     top = df.sort_values("popularity", ascending=False).head(10).reset_index(drop=True)
     if len(top) < 2:
-        raise ValueError("El dataset necesita al menos dos canciones para crear el historial base.")
+        raise ValueError(
+            "El dataset necesita al menos dos canciones para crear el historial base."
+        )
 
     t1 = top.iloc[0]
     t2 = top.iloc[1]
