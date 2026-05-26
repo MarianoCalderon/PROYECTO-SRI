@@ -1,105 +1,203 @@
-# Proyecto-BRIW
-Repositorio para las entregas del proyecto de la asignatura Búsqueda y Recuperación de Información en la Web.
+# Descubrir: Recomendador Musical Híbrido
+
+Proyecto final para la asignatura de Sistemas de Recomendación / Búsqueda y Recuperación de Información.
 
 Integrantes:
-- Calderón Núñez Mariano Marcel 
-- Chacón Ambrosio David Efraín 
+- Calderón Núñez Mariano Marcel
+- Chacón Ambrosio David Efraín
 - Ramírez Couoh Cristhian Leonel
 
- <img src="/Imagenes/Mariano.jpeg" height="200"> <img src="/Imagenes/David.jpeg" height="200"> <img src="/Imagenes/Cristhian.jpeg" height="200"> <img src="/Media/Carlos.jpeg" height="200">
-# Descubrir: Motor de Recomendación Musical Híbrido
-
-Un sistema de recomendación musical Full-Stack construido con **FastAPI**, **Neo4j**, **Redis** y **FAISS**. Este proyecto resuelve los desafíos clásicos de los sistemas de recomendación utilizando persistencia políglota y procesamiento asíncrono para entregar una experiencia de usuario fluida y transparente.
+<img src="/Imagenes/Mariano.jpeg" height="200"> <img src="/Imagenes/David.jpeg" height="200"> <img src="/Imagenes/Cristhian.jpeg" height="200">
 
 ---
 
-## Características Principales
+## ¿Qué hace?
 
-Este motor fue diseñado cumpliendo con rigurosos estándares de ingeniería de software e implementa las siguientes soluciones algorítmicas:
+**Descubrir** recomienda canciones a partir de preferencias iniciales, actividad del usuario, canciones populares, similitud musical y relaciones entre usuarios.
 
-* **Mitigación del Inicio en Frío:** Sistema de *onboarding* dinámico que perfila al usuario nuevo basándose en sus géneros y artistas favoritos, extrayendo opciones en tiempo real desde una muestra de 15,000 canciones del catálogo.
-* **Modelo Híbrido por Intercalado:** Combina Filtrado Colaborativo (basado en grafos) y Filtrado por Contenido (basado en vectores) para equilibrar la precisión y la novedad.
-* **Ranking y Boosting en Tiempo Real:** Utiliza estructuras de datos en RAM para calcular la popularidad global al instante y empujar tendencias (*boosting*) sin el efecto burbuja.
-* **Explicabilidad (Caja Blanca):** Cada recomendación le explica al usuario exactamente por qué fue sugerida (ej. *"Recomendado porque a usuarios con tus mismos gustos también les gustó"*).
-* **Usabilidad Avanzada:** Interfaz minimalista (Glassmorphism claro) que utiliza peticiones asíncronas (`fetch`) y procesamiento en segundo plano (`Web Workers`) para que la pantalla nunca se congele.
+La interfaz conserva el estilo del prototipo original: onboarding sencillo, tarjetas limpias, botón de me gusta, botón de omitir y explicaciones naturales para cada recomendación.
 
----
+Por dentro, el sistema conserva una arquitectura híbrida:
 
-## Arquitectura y Tecnologías
-
-El proyecto sigue una arquitectura orientada a microservicios con separación estricta de responsabilidades:
-
-### Backend & Datos
-* **FastAPI (Python):** Controlador principal y exposición de endpoints REST.
-* **Neo4j (Grafo):** Almacena la matriz de interacciones Usuario-Ítem y resuelve el Filtrado Colaborativo sin usar costosos `JOINs` de SQL.
-* **Redis (Clave-Valor):** Caché en memoria para almacenar metadatos de las canciones y resolver el motor de popularidad (ZSET) en milisegundos.
-* **FAISS (Búsqueda Vectorial):** Motor de inteligencia artificial de Meta para la búsqueda de similitud matemática (k-NN) basada en características acústicas (*danceability, energy, tempo*, etc.).
-* **Pandas & NumPy:** Pipeline ETL para la ingesta y limpieza del dataset original de Spotify.
-
-### Frontend
-* **HTML5 / CSS3:** Diseño responsivo inspirado en el ecosistema Apple, separando la lógica visual de la estructura.
-* **Vanilla JavaScript:** Consumo de APIs y manipulación del DOM.
-* **Web Workers:** Delegación del renderizado de componentes para liberar el hilo principal del navegador.
+- **Redis:** metadatos de canciones y rankings.
+- **Neo4j:** usuarios, canciones y relaciones `CALIFICO`.
+- **FAISS:** búsqueda por similitud musical usando audio-features.
+- **FastAPI:** servicios web REST.
+- **Frontend HTML/CSS/JS:** interfaz de usuario con Web Worker.
 
 ---
 
-## Requisitos Previos
+## Cómo cumple la rúbrica
 
-Asegúrate de tener instalados en tu máquina local:
-* [Python 3.9+](https://www.python.org/downloads/)
-* [Docker y Docker Compose](https://www.docker.com/products/docker-desktop)
-* Dataset original de Spotify (`spotify_data.csv`) ubicado en la raíz del proyecto.
+| Requisito | Implementación |
+|---|---|
+| Inicio en frío | El usuario selecciona géneros y artistas. Si aún no tiene historial, el sistema recomienda usando esas preferencias y canciones populares. |
+| Modelo híbrido | Combina similitud musical, usuarios parecidos, preferencias iniciales y popularidad. |
+| Ranking y Boosting | Redis mantiene el ranking global y rankings por género/artista. Los likes suben la popularidad y las omisiones ayudan a evitar repetir canciones. |
+| Recomendación orgánica y caja blanca | Cada canción incluye una explicación humana de por qué aparece, sin mostrar fórmulas ni porcentajes al usuario. |
+| Usabilidad | Onboarding, tarjetas limpias, botones de me gusta/omitir, mensajes de carga y diseño responsivo. |
+| Extras | Web Worker, FAISS persistente, Neo4j como grafo, Redis para ranking y ETL con Pandas/NumPy. |
 
 ---
 
-## Instalación y Configuración
+## Historial inicial en Neo4j
 
-Sigue estos pasos para levantar el entorno completo en tu máquina local.
+El proyecto carga un historial base pequeño, parecido al prototipo original de Mariano:
 
-**1. Clonar el repositorio**
+- `Usuario_Frecuente_1`
+- `Usuario_Frecuente_2`
+- 2 canciones semilla
+- 3 relaciones `CALIFICO`
+
+Esto evita que Neo4j arranque completamente vacío, pero tampoco llena el grafo con muchos usuarios artificiales. La idea es que el sistema empiece con recomendaciones por inicio en frío y que el componente colaborativo gane fuerza conforme los usuarios reales dan likes u omiten canciones.
+
+---
+
+## Requisitos
+
+- Python 3.10 o superior. En Windows se recomienda Python 3.12 si ya está instalado.
+- Docker Desktop o Docker Engine con Docker Compose.
+- El archivo `spotify_data.csv` incluido en la raíz del proyecto.
+
+---
+
+## Cómo correrlo en local
+
+### 1. Entrar al proyecto
+
 ```bash
-git clone [https://github.com/MarianoCalderon/PROYECTO-SRI.git](https://github.com/MarianoCalderon/PROYECTO-SRI.git)
-cd PROYECTO-SRI
+cd PROYECTO-SRI-main
 ```
-**2. Crear el entorno virtual e instalar dependencias**
+
+### 2. Crear entorno virtual e instalar dependencias
+
+Windows:
+
 ```bash
-python -m venv venv
-venv\Scripts\activate  # En Windows
+py -3.12 -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
-**3. Levantar las bases de datos (Docker)**
-* Inicia los contenedores de Redis y Neo4j en segundo plano.
-```bash
-docker-compose up -d
-```
-(Nota: Neo4j puede tardar unos 40 segundos en estar listo para aceptar conexiones).
 
-**4. Poblar el clúster con datos reales**
-* Ejecuta el pipeline de datos. Esto extraerá una muestra aleatoria de 15,000 canciones, indexará los vectores en FAISS, guardará el ranking en Redis y creará el grafo base en Neo4j.
+macOS/Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 3. Levantar Redis y Neo4j
+
+```bash
+docker compose up -d
+```
+
+Servicios:
+
+- Redis: `localhost:6379`
+- Neo4j Browser: `http://localhost:7474`
+- Neo4j Bolt: `bolt://localhost:7687`
+- Usuario Neo4j: `neo4j`
+- Contraseña Neo4j: `password123`
+
+### 4. Cargar datos reales
 
 ```bash
 python seed_real_data.py
 ```
-**5. Iniciar la API (Backend)**
+
+Este paso:
+
+1. Lee `spotify_data.csv`.
+2. Carga 15,000 canciones reproducibles.
+3. Guarda metadatos y rankings en Redis.
+4. Crea rankings por género y artista para el onboarding.
+5. Construye y persiste el índice FAISS en `data/`.
+6. Crea un historial base pequeño en Neo4j, similar al prototipo original.
+
+### 5. Iniciar la API
+
 ```bash
-uvicorn main:app --reload
+python -m uvicorn main:app --reload
 ```
-La API estará disponible en: http://127.0.0.1:8000
-**6. Abrir la Interfaz de Usuario**
-*Abre una nueva terminal, navega a la carpeta frontend e inicia un servidor ligero:
+
+API:
+
+```text
+http://127.0.0.1:8000
+```
+
+Estado del sistema para la presentación:
+
+```text
+http://127.0.0.1:8000/status/
+```
+
+### 6. Abrir el frontend
+
+En otra terminal:
+
 ```bash
 cd frontend
 python -m http.server 5500
 ```
-Visita http://localhost:5500 en tu navegador.
 
-### Mantenimiento
-Si necesitas reiniciar la base de datos por completo (por ejemplo, para cargar un volumen distinto de datos), ejecuta:
-```bash
-docker-compose down -v
-docker-compose up -d
-python seed_real_data.py
+Abrir:
+
+```text
+http://localhost:5500
 ```
 
+---
 
+## Flujo sugerido para la presentación
 
+1. Abrir `/status/` para mostrar que Redis, FAISS y Neo4j están activos.
+2. Abrir el frontend.
+3. Crear un usuario nuevo, por ejemplo `DavidC`.
+4. Seleccionar géneros y artistas favoritos.
+5. Explicar que las primeras recomendaciones usan inicio en frío.
+6. Dar me gusta a varias canciones.
+7. Crear otro usuario, por ejemplo `Mariano`, y repetir algunas preferencias.
+8. Abrir Neo4j Browser y mostrar usuarios, canciones y relaciones `CALIFICO`.
+9. Explicar que el colaborativo aparece cuando varios usuarios comparten gustos.
+
+---
+
+## Consultas útiles en Neo4j
+
+Ver todos los usuarios:
+
+```cypher
+MATCH (u:Usuario)
+RETURN u.id AS usuario, u.generos_favoritos AS generos, u.artistas_favoritos AS artistas
+ORDER BY usuario;
+```
+
+Ver las interacciones de un usuario:
+
+```cypher
+MATCH (u:Usuario {id:'DavidC'})-[r:CALIFICO]->(c:Cancion)
+RETURN u.id AS usuario, c.titulo AS cancion, c.artista AS artista, c.genero AS genero, r.valor AS valor
+ORDER BY r.timestamp DESC;
+```
+
+Ver el grafo de relaciones:
+
+```cypher
+MATCH p=(u:Usuario)-[r:CALIFICO]->(c:Cancion)
+RETURN p
+LIMIT 80;
+```
+
+Ver usuarios con canciones en común:
+
+```cypher
+MATCH (u:Usuario {id:'DavidC'})-[r1:CALIFICO]->(c:Cancion)<-[r2:CALIFICO]-(otro:Usuario)
+WHERE r1.valor >= 4 AND r2.valor >= 4 AND otro.id <> u.id
+RETURN otro.id AS usuario_parecido, count(c) AS canciones_en_comun, collect(c.titulo)[0..5] AS canciones_compartidas
+ORDER BY canciones_en_comun DESC;
+```

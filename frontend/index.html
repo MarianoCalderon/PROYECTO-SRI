@@ -36,8 +36,18 @@
 </div>
 
 <script>
+    const API_URL = 'http://127.0.0.1:8000';
     const uiWorker = new Worker('worker.js');
     let userId = null;
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
 
     uiWorker.onmessage = function(e) {
         document.getElementById('loading').style.display = 'none';
@@ -46,56 +56,54 @@
 
     async function cargarOpcionesOnboarding() {
         try {
-            const response = await fetch('http://127.0.0.1:8000/onboarding-options/');
+            const response = await fetch(`${API_URL}/onboarding-options/`);
             const data = await response.json();
             
-            const genreHtml = data.genres.map(g => `<label><input type="checkbox" class="genre-cb" value="${g}"> ${g}</label>`).join('');
-            document.getElementById('dynamic-genres').innerHTML = genreHtml || '<p>No hay géneros</p>';
+            const genreHtml = data.genres.map(g => `<label><input type="checkbox" class="genre-cb" value="${escapeHtml(g)}"> ${escapeHtml(g)}</label>`).join('');
+            document.getElementById('dynamic-genres').innerHTML = genreHtml || '<p>No hay géneros. Ejecuta seed_real_data.py.</p>';
 
-            const artistHtml = data.artists.map(a => `<label><input type="checkbox" class="artist-cb" value="${a}"> ${a}</label>`).join('');
-            document.getElementById('dynamic-artists').innerHTML = artistHtml || '<p>No hay artistas</p>';
-            
+            const artistHtml = data.artists.map(a => `<label><input type="checkbox" class="artist-cb" value="${escapeHtml(a)}"> ${escapeHtml(a)}</label>`).join('');
+            document.getElementById('dynamic-artists').innerHTML = artistHtml || '<p>No hay artistas. Ejecuta seed_real_data.py.</p>';
         } catch (e) {
-            console.error("Error cargando opciones", e);
+            console.error('Error cargando opciones', e);
+            document.getElementById('dynamic-genres').innerHTML = '<p>No se pudo conectar con el backend.</p>';
+            document.getElementById('dynamic-artists').innerHTML = '<p>No se pudo conectar con el backend.</p>';
         }
     }
 
     async function enviarCuestionario() {
         const inputId = document.getElementById('nuevo-usuario-id').value.trim();
-        if (!inputId) { alert("Por favor ingresa un ID válido."); return; }
+        if (!inputId) { alert('Por favor ingresa un ID válido.'); return; }
         
         userId = inputId;
-        
-        const genreCbs = document.querySelectorAll('.genre-cb:checked');
-        const generosSeleccionados = Array.from(genreCbs).map(cb => cb.value);
-        
-        const artistCbs = document.querySelectorAll('.artist-cb:checked');
-        const artistasSeleccionados = Array.from(artistCbs).map(cb => cb.value);
+        const generosSeleccionados = Array.from(document.querySelectorAll('.genre-cb:checked')).map(cb => cb.value);
+        const artistasSeleccionados = Array.from(document.querySelectorAll('.artist-cb:checked')).map(cb => cb.value);
 
         try {
-            await fetch('http://127.0.0.1:8000/register/', {
+            await fetch(`${API_URL}/register/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     user_id: userId, 
                     generos_favoritos: generosSeleccionados, 
                     artistas_favoritos: artistasSeleccionados, 
-                    idioma_preferido: "es" 
+                    idioma_preferido: 'es' 
                 })
             });
 
             document.getElementById('onboarding-modal').style.display = 'none';
-            document.getElementById('user-greeting').innerText = `Para ${userId}`;
+            document.getElementById('user-greeting').innerText = `Recomendaciones para ${userId}`;
             cargarRecomendaciones(true, generosSeleccionados, artistasSeleccionados);
         } catch (e) {
-            alert("Error al inicializar sesión en el backend.");
+            alert('Error al iniciar la sesión. Revisa que el servidor esté activo.');
         }
     }
 
     async function cargarRecomendaciones(isNew, genres = [], artists = []) {
+        document.getElementById('loading').innerText = 'Buscando canciones que encajen contigo...';
         document.getElementById('loading').style.display = 'block';
         try {
-            const response = await fetch('http://127.0.0.1:8000/recommendations/', {
+            const response = await fetch(`${API_URL}/recommendations/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -108,21 +116,24 @@
             const data = await response.json();
             uiWorker.postMessage(data);
         } catch (e) {
-            document.getElementById('loading').innerText = "Error en la red.";
+            document.getElementById('loading').innerText = 'Error en la red.';
         }
     }
 
-    async function registrarInteraccion(trackId) {
+    async function registrarInteraccion(trackId, rating = 5) {
+        if (!userId) return;
+        document.getElementById('loading').innerText = 'Recalculando tus recomendaciones...';
         document.getElementById('loading').style.display = 'block';
         try {
-            await fetch('http://127.0.0.1:8000/interact/', {
+            await fetch(`${API_URL}/interact/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: userId, track_id: trackId, rating: 5 })
+                body: JSON.stringify({ user_id: userId, track_id: trackId, rating })
             });
             cargarRecomendaciones(false);
         } catch (e) {
-            console.error("Error al registrar interacción", e);
+            console.error('Error al registrar interacción', e);
+            document.getElementById('loading').innerText = 'No se pudo registrar la interacción.';
         }
     }
 

@@ -3,6 +3,10 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
   neo4j:
     image: neo4j:latest
     environment:
@@ -10,3 +14,9 @@ services:
     ports:
       - "7474:7474"
       - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+
+volumes:
+  redis_data:
+  neo4j_data:
