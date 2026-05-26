@@ -34,12 +34,12 @@ onmessage = function(e) {
                     </div>
 
                     <div class="reason-box">
-                        <span>✨ IA:</span> ${escapeHtml(track.reason)}
+                        ${escapeHtml(track.reason)}
                     </div>
 
                     <div class="button-row">
                         <button class="btn-like" onclick="registrarInteraccion('${trackId}', 5)">
-                            ❤ Me gusta
+                            &#10084; Me gusta
                         </button>
                         <button class="btn-secondary" onclick="registrarInteraccion('${trackId}', 1)">
                             Omitir
