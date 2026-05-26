@@ -101,7 +101,7 @@ def _cargar_redis_y_faiss(df: pd.DataFrame) -> None:
 def _preparar_onboarding(df: pd.DataFrame) -> None:
     print("Preparando opciones dinámicas de onboarding...")
     # Se mantiene cercano al prototipo original de Mariano.
-    top_genres = df["track_genre"].value_counts().head(15).index.astype(str).tolist()
+    top_genres = df["track_genre"].value_counts().head(30).index.astype(str).tolist()
     top_artists = df["artists"].value_counts().head(20).index.astype(str).tolist()
 
     redis_client.delete("onboarding:genres", "onboarding:artists")

@@ -10,6 +10,10 @@ class UserRegistration(BaseModel):
     idioma_preferido: str = "es"
 
 
+class UserLogin(BaseModel):
+    user_id: str = Field(..., min_length=1)
+
+
 class UserProfile(BaseModel):
     user_id: str = Field(..., min_length=1)
     is_new: bool = False

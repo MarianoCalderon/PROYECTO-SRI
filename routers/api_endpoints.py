@@ -1,8 +1,8 @@
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from domain.models import Interaction, UserProfile, UserRegistration
+from domain.models import Interaction, UserLogin, UserProfile, UserRegistration
 from infrastructure import db_clients
 from infrastructure.db_clients import neo4j_driver, redis_client
 from use_cases.recommender_logic import get_hybrid_recommendations
@@ -15,6 +15,31 @@ async def get_onboarding_data():
     genres = redis_client.lrange("onboarding:genres", 0, -1)
     artists = redis_client.lrange("onboarding:artists", 0, -1)
     return {"genres": genres, "artists": artists}
+
+
+@router.post("/login/")
+async def login_user(login_data: UserLogin):
+    query = """
+    MATCH (u:Usuario {id: $uid})
+    RETURN u.id AS user_id,
+           coalesce(u.idioma, 'es') AS idioma_preferido,
+           coalesce(u.generos_favoritos, []) AS generos_favoritos,
+           coalesce(u.artistas_favoritos, []) AS artistas_favoritos
+    LIMIT 1
+    """
+    with neo4j_driver.session() as session:
+        record = session.run(query, uid=login_data.user_id).single()
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    return {
+        "status": "Inicio de sesión exitoso",
+        "user_id": record["user_id"],
+        "idioma_preferido": record["idioma_preferido"],
+        "generos_favoritos": record["generos_favoritos"],
+        "artistas_favoritos": record["artistas_favoritos"],
+    }
 
 
 @router.post("/register/")

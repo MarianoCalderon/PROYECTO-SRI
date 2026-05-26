@@ -15,12 +15,13 @@ function escapeJsString(value) {
 onmessage = function(e) {
     const rawData = e.data;
     let htmlResult = "";
-    
+
     if (!rawData.recommendations || rawData.recommendations.length === 0) {
         htmlResult = "<p style='color: var(--text-muted);'>No encontramos recomendaciones por ahora. Dale me gusta a algunas canciones o vuelve a elegir tus preferencias.</p>";
     } else {
         rawData.recommendations.forEach(track => {
             const trackId = escapeJsString(track.track_id);
+            const score100 = Math.round(Number(track.score || 0) * 100);
 
             htmlResult += `
                 <div class="track-card">
@@ -29,6 +30,7 @@ onmessage = function(e) {
                             <h3>${escapeHtml(track.titulo)}</h3>
                             <p>${escapeHtml(track.artista)} &middot; ${escapeHtml(track.genero)}</p>
                         </div>
+                        <div class="score-badge">${score100}/100</div>
                     </div>
 
                     <div class="reason-box">
