@@ -46,6 +46,30 @@ def _mayuscula_inicial(texto: str) -> str:
     return texto[0].upper() + texto[1:]
 
 
+def _clave_cancion(track_id: Optional[str], titulo: Optional[str], artista: Optional[str]) -> str:
+    """
+    Clave estable para identificar la misma cancion aunque cambie el track_id.
+    Prioriza titulo+artista; si faltan, usa track_id.
+    """
+    titulo_norm = normalizar_clave(str(titulo or "").strip())
+    artista_norm = normalizar_clave(str(artista or "").strip())
+    if titulo_norm != "desconocido" and artista_norm != "desconocido":
+        return f"{titulo_norm}::{artista_norm}"
+    return f"track::{normalizar_clave(str(track_id or '').strip())}"
+
+
+def _claves_historial(historial: List[Dict[str, Any]]) -> set:
+    claves = set()
+    for inter in historial:
+        tid = str(inter.get("track_id") or "").strip()
+        titulo = inter.get("titulo")
+        artista = inter.get("artista")
+        if tid:
+            claves.add(_clave_cancion(tid, titulo, artista))
+            claves.add(f"track::{normalizar_clave(tid)}")
+    return claves
+
+
 def obtener_metadatos(track_ids: Iterable[str]) -> List[Dict[str, Any]]:
     """Recupera metadatos desde Redis preservando el orden y evitando duplicados."""
     resultados: List[Dict[str, Any]] = []
@@ -94,6 +118,53 @@ def _vector_cancion(track_id: str) -> Optional[np.ndarray]:
     if vector.shape != (db_clients.FAISS_DIM,):
         return None
     return vector
+
+
+def _anclas_de_likes(historial: List[Dict[str, Any]], limite: int = 25) -> List[Tuple[np.ndarray, str]]:
+    """
+    Recupera likes del usuario con su vector y titulo para generar
+    explicaciones por item, no una sola explicacion global.
+    """
+    anclas: List[Tuple[np.ndarray, str]] = []
+    vistos = set()
+
+    for interaccion in historial:
+        if interaccion.get("rating", 0) < 4:
+            continue
+
+        track_id = str(interaccion.get("track_id") or "").strip()
+        if not track_id or track_id in vistos:
+            continue
+        vistos.add(track_id)
+
+        vector = _vector_cancion(track_id)
+        if vector is None:
+            continue
+
+        titulo = str(interaccion.get("titulo") or "").strip() or _titulo_track(track_id) or "una cancion que te gusto"
+        anclas.append((vector, titulo))
+        if len(anclas) >= limite:
+            break
+
+    return anclas
+
+
+def _titulo_like_mas_cercano(
+    vector_objetivo: Optional[np.ndarray],
+    anclas_likes: List[Tuple[np.ndarray, str]],
+) -> Optional[str]:
+    if vector_objetivo is None or not anclas_likes:
+        return None
+
+    mejor_titulo: Optional[str] = None
+    mejor_distancia = float("inf")
+    for vector_like, titulo in anclas_likes:
+        distancia = float(np.linalg.norm(vector_objetivo - vector_like))
+        if distancia < mejor_distancia:
+            mejor_distancia = distancia
+            mejor_titulo = titulo
+
+    return mejor_titulo
 
 
 def _historial_usuario(user_id: str) -> List[Dict[str, Any]]:
@@ -242,6 +313,7 @@ def _buscar_por_contenido(
     fuente_perfil: str,
     ejemplo_perfil: Optional[str],
     excluidas: set,
+    anclas_likes: Optional[List[Tuple[np.ndarray, str]]] = None,
     limite: int = 80,
 ) -> Dict[str, Dict[str, Any]]:
     candidatos: Dict[str, Dict[str, Any]] = {}
@@ -268,13 +340,19 @@ def _buscar_por_contenido(
         if tid in excluidas:
             continue
 
+        evidencia_item = evidencia
+        if fuente_perfil in {"likes", "ultima_cancion"} and anclas_likes:
+            titulo_ancla = _titulo_like_mas_cercano(_vector_cancion(tid), anclas_likes)
+            if titulo_ancla:
+                evidencia_item = f"se parece a otras canciones que te gustaron, como '{titulo_ancla}'"
+
         similitud = 1.0 / (1.0 + max(float(distancia), 0.0))
         bono_rank = 1.0 - (rank / max(k, 1))
         score = (similitud * 0.85) + (bono_rank * 0.15)
         candidatos[tid] = {
             "score": score,
             "distance": float(distancia),
-            "evidence": [evidencia],
+            "evidence": [evidencia_item],
         }
 
     return candidatos
@@ -339,11 +417,14 @@ def _fusionar_candidatos(
     componente: str,
 ) -> None:
     for tid, info in nuevos.items():
-        item = destino.setdefault(tid, {"raw": {}, "evidence": []})
+        item = destino.setdefault(tid, {"raw": {}, "evidence": [], "evidence_by_component": {}})
         item["raw"][componente] = max(float(info.get("score", 0.0)), item["raw"].get(componente, 0.0))
         for evidencia in info.get("evidence", []):
             if evidencia not in item["evidence"]:
                 item["evidence"].append(evidencia)
+            por_componente = item["evidence_by_component"].setdefault(componente, [])
+            if evidencia not in por_componente:
+                por_componente.append(evidencia)
 
 
 def _pesos_activos(historial: List[Dict[str, Any]], generos: List[str], artistas: List[str]) -> Dict[str, float]:
@@ -369,6 +450,8 @@ def _pesos_activos(historial: List[Dict[str, Any]], generos: List[str], artistas
 def _normalizar_y_rankear(
     candidatos: Dict[str, Dict[str, Any]],
     pesos_base: Dict[str, float],
+    excluidas_ids: Optional[set] = None,
+    excluidas_claves_cancion: Optional[set] = None,
     limite: int = 5,
 ) -> List[Dict[str, Any]]:
     if not candidatos:
@@ -391,8 +474,20 @@ def _normalizar_y_rankear(
 
     rankeados: List[Dict[str, Any]] = []
     for tid, info in candidatos.items():
+        tid_str = str(tid).strip()
+        if excluidas_ids and tid_str in excluidas_ids:
+            continue
+
         metadata = _metadatos_uno(tid)
         if not metadata:
+            continue
+
+        clave_actual = _clave_cancion(
+            track_id=tid_str,
+            titulo=metadata.get("titulo"),
+            artista=metadata.get("artista"),
+        )
+        if excluidas_claves_cancion and clave_actual in excluidas_claves_cancion:
             continue
 
         contribuciones: Dict[str, float] = {}
@@ -413,6 +508,7 @@ def _normalizar_y_rankear(
 
         metadata["score"] = round(score_final, 4)
         metadata["components"] = {k: round(v, 4) for k, v in contribuciones.items() if v > 0}
+        metadata["signals_by_component"] = info.get("evidence_by_component", {})
         metadata["signals"] = info.get("evidence", [])[:4]
         metadata["reason"] = _explicar_recomendacion(metadata, contribuciones)
         rankeados.append(metadata)
@@ -423,44 +519,79 @@ def _normalizar_y_rankear(
 
 def _explicar_recomendacion(metadata: Dict[str, Any], contribuciones: Dict[str, float]) -> str:
     if not contribuciones:
-        return "La agregué porque puede ser una buena opción para seguir descubriendo música."
+        return "La agregue porque puede ser una buena opcion para seguir descubriendo musica."
 
-    componente_principal = max(contribuciones, key=contribuciones.get)
-    senales = [str(s) for s in metadata.get("signals", []) if str(s).strip()]
-    primera_senal = senales[0] if senales else ""
+    senales_por_componente = metadata.get("signals_by_component", {}) or {}
+    senales_generales = [str(s) for s in metadata.get("signals", []) if str(s).strip()]
 
-    if componente_principal == "collaborative":
-        if primera_senal:
-            return f"{_mayuscula_inicial(primera_senal)}. Por eso pensé que también podía encajarte."
-        return "A personas con gustos parecidos a los tuyos también les gustó esta canción, así que la puse en tu lista."
+    def _senal_para(componente: str) -> str:
+        candidatas = [str(s) for s in senales_por_componente.get(componente, []) if str(s).strip()]
+        if candidatas:
+            return candidatas[0]
+        return senales_generales[0] if senales_generales else ""
 
-    if componente_principal == "content":
-        if primera_senal:
-            return f"{_mayuscula_inicial(primera_senal)}. Por eso la agregué a tus recomendaciones."
-        return "La agregué porque tiene una vibra parecida a lo que has marcado con me gusta."
+    ranking_componentes = sorted(contribuciones.items(), key=lambda item: item[1], reverse=True)
+    componente_principal, peso_principal = ranking_componentes[0]
+    componente_secundario = ranking_componentes[1][0] if len(ranking_componentes) > 1 else ""
+    peso_secundario = ranking_componentes[1][1] if len(ranking_componentes) > 1 else 0.0
 
-    if componente_principal == "preference":
-        if primera_senal:
-            return f"La elegí porque {primera_senal}."
-        return "La elegí porque se acerca a los géneros o artistas que seleccionaste."
+    def _frase(componente: str) -> str:
+        senal = _senal_para(componente)
+        if componente == "content":
+            if senal:
+                return f"{_mayuscula_inicial(senal)}."
+            return "La elegi porque suena cercana a lo que has marcado con me gusta."
+        if componente == "collaborative":
+            if senal:
+                return f"{_mayuscula_inicial(senal)}."
+            return "A usuarios con gustos parecidos tambien les gusto esta cancion."
+        if componente == "preference":
+            if senal:
+                return f"La inclui porque {senal}."
+            return "La inclui porque encaja con tus generos o artistas favoritos."
+        if senal:
+            return f"La puse como opcion fuerte porque {senal}."
+        return "La puse como opcion fuerte por su buena recepcion en el catalogo."
 
-    if primera_senal:
-        return f"La puse como una opción segura porque {primera_senal}."
-    return "La puse como una opción segura para seguir explorando canciones con buena recepción."
+    explicacion = _frase(componente_principal)
 
+    # Si el segundo componente aporta de forma relevante, se agrega como refuerzo.
+    if componente_secundario and peso_secundario >= min(0.12, peso_principal * 0.9):
+        refuerzo = _frase(componente_secundario)
+        if refuerzo != explicacion:
+            explicacion = f"{explicacion} Tambien {refuerzo[0].lower() + refuerzo[1:]}"
+
+    return explicacion
 
 def _diversificar_por_artista(canciones: List[Dict[str, Any]], limite: int) -> List[Dict[str, Any]]:
     """Evita que el top final se llene de un solo artista."""
     seleccionadas: List[Dict[str, Any]] = []
     diferidas: List[Dict[str, Any]] = []
     contador_artistas: Counter[str] = Counter()
+    vistos_ids = set()
+    vistas_claves = set()
 
     for cancion in canciones:
+        tid = str(cancion.get("track_id") or "").strip()
+        if tid and tid in vistos_ids:
+            continue
+
+        clave_cancion = _clave_cancion(
+            track_id=tid,
+            titulo=cancion.get("titulo"),
+            artista=cancion.get("artista"),
+        )
+        if clave_cancion in vistas_claves:
+            continue
+
         artista_principal = cancion.get("artista", "").split(";")[0]
         clave_artista = normalizar_clave(artista_principal)
         if contador_artistas[clave_artista] < 2:
             seleccionadas.append(cancion)
             contador_artistas[clave_artista] += 1
+            if tid:
+                vistos_ids.add(tid)
+            vistas_claves.add(clave_cancion)
         else:
             diferidas.append(cancion)
         if len(seleccionadas) >= limite:
@@ -468,8 +599,21 @@ def _diversificar_por_artista(canciones: List[Dict[str, Any]], limite: int) -> L
 
     if len(seleccionadas) < limite:
         for cancion in diferidas:
-            if cancion not in seleccionadas:
-                seleccionadas.append(cancion)
+            tid = str(cancion.get("track_id") or "").strip()
+            if tid and tid in vistos_ids:
+                continue
+            clave_cancion = _clave_cancion(
+                track_id=tid,
+                titulo=cancion.get("titulo"),
+                artista=cancion.get("artista"),
+            )
+            if clave_cancion in vistas_claves:
+                continue
+
+            seleccionadas.append(cancion)
+            if tid:
+                vistos_ids.add(tid)
+            vistas_claves.add(clave_cancion)
             if len(seleccionadas) >= limite:
                 break
 
@@ -490,7 +634,9 @@ def get_hybrid_recommendations(
     """
     generos, artistas = _preferencias_usuario(user_id, initial_genres, initial_artists)
     historial = _historial_usuario(user_id)
-    excluidas = {inter["track_id"] for inter in historial}
+    excluidas_ids = {str(inter.get("track_id") or "").strip() for inter in historial if str(inter.get("track_id") or "").strip()}
+    excluidas_claves_cancion = _claves_historial(historial)
+    anclas_likes = _anclas_de_likes(historial)
 
     candidatos: Dict[str, Dict[str, Any]] = {}
 
@@ -504,11 +650,17 @@ def get_hybrid_recommendations(
 
     _fusionar_candidatos(
         candidatos,
-        _buscar_por_contenido(vector_perfil, fuente_perfil, ejemplo_perfil, excluidas),
+        _buscar_por_contenido(vector_perfil, fuente_perfil, ejemplo_perfil, excluidas_ids, anclas_likes),
         "content",
     )
     _fusionar_candidatos(candidatos, _buscar_colaborativo(user_id), "collaborative")
-    _fusionar_candidatos(candidatos, _candidatos_por_preferencias(generos, artistas, excluidas), "preference")
-    _fusionar_candidatos(candidatos, _candidatos_populares(excluidas), "popularity")
+    _fusionar_candidatos(candidatos, _candidatos_por_preferencias(generos, artistas, excluidas_ids), "preference")
+    _fusionar_candidatos(candidatos, _candidatos_populares(excluidas_ids), "popularity")
 
-    return _normalizar_y_rankear(candidatos, _pesos_activos(historial, generos, artistas), limite=5)
+    return _normalizar_y_rankear(
+        candidatos=candidatos,
+        pesos_base=_pesos_activos(historial, generos, artistas),
+        excluidas_ids=excluidas_ids,
+        excluidas_claves_cancion=excluidas_claves_cancion,
+        limite=5,
+    )
