@@ -2,7 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.api_endpoints import router
 
-app = FastAPI(title="Motor de Recomendación Musical")
+app = FastAPI(
+    title="Motor de Recomendación Musical",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -12,8 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
+app.include_router(router, prefix="/api")
 
-@app.get("/")
+@app.get("/api")
 def read_root():
-    return {"message": "API de Recomendación Activa. Visita /docs para pruebas de endpoints."}
+    return {"message": "API de Recomendación Activa. Visita /api/docs para pruebas de endpoints."}
